@@ -1,9 +1,10 @@
+use chrono::NaiveDate;
 use clap::Parser;
 use csv;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::sync::mpsc;
-use std::thread;
+use std::{thread, u16};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -15,7 +16,7 @@ struct Args {
 enum ColumnType {
     Text(String),
     Float(f64),
-    Date,
+    Date(NaiveDate),
     FileEnd,
 }
 
@@ -33,10 +34,125 @@ struct NumberColumn {
     std: f64,
 }
 
+// stores summary of a column with date values
+struct DateColumn {
+    earliest: Option<NaiveDate>,
+    latest: Option<NaiveDate>,
+}
+
 // stores summary of any column
 enum ColumnSummary {
     Text(TextColumn),
     Number(NumberColumn),
+    Date(DateColumn),
+}
+
+struct PossibleDate {
+    year: Option<i32>,
+    month: Option<u32>,
+    day: Option<u32>,
+}
+
+impl PossibleDate {
+    fn new() -> Self {
+        return PossibleDate {
+            year: None,
+            month: None,
+            day: None,
+        };
+    }
+}
+
+fn parse_date_from_text(text_date: &str) -> Option<NaiveDate> {
+    let mut date_assembler = PossibleDate::new();
+
+    let split_date_iterator = text_date.split(|c: char| !c.is_digit(10)).into_iter();
+
+    let mut loop_counter: u8 = 0;
+    // go over the split numbers and assemble date
+    for number_sequence in split_date_iterator {
+        loop_counter += 1;
+        // we should have the whole date after 3 iterations, so we can break out of this loop
+        if loop_counter == 4 {
+            break;
+        }
+        match number_sequence.len() {
+            // year-like structure passed
+            4 => {
+                // if year is empty
+                if date_assembler.year == None {
+                    // put current sequence as year
+                    let parsed = number_sequence.parse::<i32>();
+                    match parsed {
+                        Ok(number) => date_assembler.year = Some(number),
+                        Err(_) => return None,
+                    }
+                    let parsed = number_sequence.parse::<i32>();
+                    match parsed {
+                        Ok(number) => date_assembler.year = Some(number),
+                        Err(_) => return None,
+                    }
+                }
+            }
+            _ => {
+                // if year is empty, the format is d(d)-(m)m-yyyy
+                if date_assembler.year == None {
+                    // if year and day are empty, day was passed during first iteration
+                    if date_assembler.day == None {
+                        // put current sequence as day
+                        let parsed = number_sequence.parse::<u32>();
+                        match parsed {
+                            Ok(number) => date_assembler.day = Some(number),
+                            Err(_) => return None,
+                        }
+                        // if year is empty, but day filled, month was passed during second iteration
+                    } else {
+                        // put current sequence as month
+                        let parsed = number_sequence.parse::<u32>();
+                        match parsed {
+                            Ok(number) => date_assembler.month = Some(number),
+                            Err(_) => return None,
+                        }
+                    }
+                } else {
+                    // if year is filled, the format is yyyy-(m)m-(d)d
+                    // if year is filled, but month is empty, month was passed during second
+                    // iteration
+                    if date_assembler.month == None {
+                        // put current sequence as month
+                        let parsed = number_sequence.parse::<u32>();
+                        match parsed {
+                            Ok(number) => date_assembler.month = Some(number),
+                            Err(_) => return None,
+                        }
+                    // if year and month are filled, day was passed during third iteration
+                    } else {
+                        // put current sequance as day
+                        let parsed = number_sequence.parse::<u32>();
+                        match parsed {
+                            Ok(number) => date_assembler.day = Some(number),
+                            Err(_) => return None,
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    let year_exists = date_assembler.year != None;
+    let month_exists = date_assembler.month != None;
+    let day_exists = date_assembler.day != None;
+
+    if year_exists && month_exists && day_exists {
+        let constructed_date = NaiveDate::from_ymd_opt(
+            date_assembler.year.unwrap(),
+            date_assembler.month.unwrap(),
+            date_assembler.day.unwrap(),
+        );
+        return constructed_date;
+    } else {
+        return None;
+    }
 }
 
 /// reads a csv file, and returns a file reader and vector with all headers
@@ -134,6 +250,7 @@ fn get_hashmaps(
         let handle = thread::spawn(move || {
             // assumes the column has text values, used later to return the right thing
             let mut text_column: bool = true;
+            let mut date_column: bool = false;
 
             // create empty hashmap and category count for text values
             let mut categories: HashSet<String> = HashSet::new();
@@ -150,6 +267,12 @@ fn get_hashmaps(
             // hashmap that will store string representation of float values with the counter to
             // calculate the median later
             let mut mode_map: HashMap<String, u16> = HashMap::new();
+
+            // struct storing the earliest and latest date from file
+            let mut date_aggregate = DateColumn {
+                earliest: None,
+                latest: None,
+            };
 
             // wait for messages from row splitting part and handle values when they arrive
             for message in rx {
@@ -171,6 +294,36 @@ fn get_hashmaps(
                         m = m + (v - m) / row_counter as f64;
                         s = s + (v - m) * (v - old_m)
                     }
+                    ColumnType::Date(v) => {
+                        // TODO: something is wrong here with how earliest and latest is passed to
+                        // date_aggregate
+
+                        // mark this as a date column
+                        date_column = true;
+                        text_column = false;
+
+                        // swap earliest if new earlies date found
+                        let current_earliest = date_aggregate.earliest;
+                        match current_earliest {
+                            Some(date) => {
+                                if v < date {
+                                    date_aggregate.earliest = Some(v);
+                                }
+                            }
+                            None => date_aggregate.earliest = Some(v),
+                        }
+
+                        // swap latest if new latest date found
+                        let current_latest = date_aggregate.latest;
+                        match current_latest {
+                            Some(date) => {
+                                if v > date {
+                                    date_aggregate.latest = Some(v);
+                                }
+                            }
+                            None => date_aggregate.latest = Some(v),
+                        }
+                    }
                     ColumnType::Text(v) => {
                         // handle text values: add category to counter and hashmap if they are not
                         // already there
@@ -190,8 +343,13 @@ fn get_hashmaps(
             // return ColumnSummary value based on handles column type
             if text_column == true {
                 return ColumnSummary::Text(TextColumn {
-                    categories: categories,
-                    category_count: category_count,
+                    categories,
+                    category_count,
+                });
+            } else if date_column == true {
+                return ColumnSummary::Date(DateColumn {
+                    earliest: date_aggregate.earliest,
+                    latest: date_aggregate.latest,
                 });
             } else {
                 // calculate summary statistics
@@ -200,10 +358,10 @@ fn get_hashmaps(
                 let median = get_stats_from_hashmap(mode_map);
 
                 return ColumnSummary::Number(NumberColumn {
-                    sum: sum,
-                    mean: mean,
-                    median: median,
-                    std: std,
+                    sum,
+                    mean,
+                    median,
+                    std,
                 });
             }
         });
@@ -220,6 +378,7 @@ fn get_hashmaps(
 fn display_stats(
     text_summary: Vec<(String, TextColumn)>,
     number_summary: Vec<(String, NumberColumn)>,
+    date_summary: Vec<(String, DateColumn)>,
 ) {
     println!("Text columns\n");
     println!("column               class count          classes");
@@ -231,6 +390,17 @@ fn display_stats(
         } else {
             println!("{:<20} {:<20} ({:<20?})", column_name, count, categories)
         }
+    }
+
+    println!("\nDate columns\n");
+    println!("column              earliest            latest");
+    for (column_name, column_stats) in date_summary {
+        println!(
+            "{:<20}{:<20}{:<20}",
+            column_name,
+            format!("{:<20}", column_stats.earliest.unwrap()),
+            format!("{:<20}", column_stats.latest.unwrap())
+        )
     }
 
     println!("\nNumber columns\n");
@@ -265,7 +435,13 @@ fn main() {
             // error, use Text type
             let converted_value = match value.parse::<f64>() {
                 Ok(v) => ColumnType::Float(v),
-                Err(_) => ColumnType::Text(value.to_owned()),
+                Err(_) => {
+                    let opt_date = parse_date_from_text(value);
+                    match opt_date {
+                        Some(d) => ColumnType::Date(d),
+                        None => ColumnType::Text(value.to_owned()),
+                    }
+                }
             };
 
             // send the value to the thread that manages this column
@@ -291,38 +467,49 @@ fn main() {
         }
     }
 
-    // prepare empty vectors for text and number column summaries
+    // prepare empty vectors for column summaries of different types
     let mut text_summary: Vec<(String, TextColumn)> = vec![];
     let mut number_summary: Vec<(String, NumberColumn)> = vec![];
+    let mut date_summary: Vec<(String, DateColumn)> = vec![];
 
-    // joins all threads back into main, pushes the returned value to text or number summary vector
+    // joins all threads back into main, pushes the returned value to appropriate column type
+    // vector
     for header in headers.iter() {
         let column_summary = handles_map
             .remove(header)
             .expect("Did not get a handle from header")
-            .join()
-            .expect("Counldn't join a handle");
+            .join();
 
         match column_summary {
-            ColumnSummary::Text(v) => text_summary.push((
-                header.to_owned(),
-                TextColumn {
-                    categories: v.categories,
-                    category_count: v.category_count,
-                },
-            )),
-            ColumnSummary::Number(v) => number_summary.push((
-                header.to_owned(),
-                NumberColumn {
-                    sum: v.sum,
-                    mean: v.mean,
-                    median: v.median,
-                    std: v.std,
-                },
-            )),
+            Ok(join_handle) => match join_handle {
+                ColumnSummary::Text(v) => text_summary.push((
+                    header.to_owned(),
+                    TextColumn {
+                        categories: v.categories,
+                        category_count: v.category_count,
+                    },
+                )),
+                ColumnSummary::Number(v) => number_summary.push((
+                    header.to_owned(),
+                    NumberColumn {
+                        sum: v.sum,
+                        mean: v.mean,
+                        median: v.median,
+                        std: v.std,
+                    },
+                )),
+                ColumnSummary::Date(v) => date_summary.push((
+                    header.to_owned(),
+                    DateColumn {
+                        earliest: v.earliest,
+                        latest: v.latest,
+                    },
+                )),
+            },
+            Err(_) => println!("Something went wrong during joining {} handle", &header),
         }
     }
 
     // displays all the results
-    display_stats(text_summary, number_summary);
+    display_stats(text_summary, number_summary, date_summary);
 }
