@@ -6,7 +6,7 @@ use csv;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::sync::mpsc;
-use std::{thread, u16};
+use std::thread;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -114,7 +114,7 @@ fn load_file(path: &str) -> Result<(csv::Reader<File>, Vec<String>), csv::Error>
 
 /// extracts median value from hashmap with string representation of float values and the number of
 /// their occurences
-fn get_stats_from_hashmap(mut hashmap: HashMap<String, u16>) -> f64 {
+fn get_median_from_hashmap(mut hashmap: HashMap<String, u16>) -> f64 {
     // parse all keys into float values
     let mut keys: Vec<f64> = hashmap
         .keys()
@@ -295,15 +295,13 @@ fn get_hashmaps(
 
                 return encapsulators::ColumnSummary::Text(text_column_summary);
             } else if date_column == true {
-                let mut date_column_summary = encapsulators::DateColumn::new();
-                date_column_summary.set_earliest(date_aggregate.get_earliest().unwrap());
-                date_column_summary.set_latest(date_aggregate.get_latest().unwrap());
+                let date_column_summary = date_aggregate.build_summary();
                 return encapsulators::ColumnSummary::Date(date_column_summary);
             } else {
                 // calculate summary statistics
                 let mean = sum / row_counter as f64;
                 let std = s / (row_counter - 1) as f64;
-                let median = get_stats_from_hashmap(mode_map);
+                let median = get_median_from_hashmap(mode_map);
 
                 let mut number_column_summary = encapsulators::NumberColumn::new();
                 number_column_summary.set_sum(sum);
@@ -337,7 +335,10 @@ fn display_stats(
         if count > 10 {
             println!("{:<20} {:<20} (a lot)", column_name, count)
         } else {
-            println!("{:<20} {:<20} ({:<20?})", column_name, count, vec_categories)
+            println!(
+                "{:<20} {:<20} ({:<20?})",
+                column_name, count, vec_categories
+            )
         }
     }
 
@@ -435,18 +436,15 @@ fn main() {
 
         match column_summary {
             Ok(join_handle) => match join_handle {
-                encapsulators::ColumnSummary::Text(text_column) => text_summary.push((
-                    header.to_owned(),
-                    text_column.build_summary()
-                )),
-                encapsulators::ColumnSummary::Number(number_column) => number_summary.push((
-                    header.to_owned(),
-                    number_column.build_summary(),
-                )),
-                encapsulators::ColumnSummary::Date(date_column) => date_summary.push((
-                    header.to_owned(),
-                    date_column.build_summary(),
-                )),
+                encapsulators::ColumnSummary::Text(text_column) => {
+                    text_summary.push((header.to_owned(), text_column.build_summary()))
+                }
+                encapsulators::ColumnSummary::Number(number_column) => {
+                    number_summary.push((header.to_owned(), number_column.build_summary()))
+                }
+                encapsulators::ColumnSummary::Date(date_column) => {
+                    date_summary.push((header.to_owned(), date_column.build_summary()))
+                }
             },
             Err(_) => println!("Something went wrong during joining {} handle", &header),
         }
