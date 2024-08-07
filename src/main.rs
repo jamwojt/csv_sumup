@@ -12,6 +12,8 @@ use std::thread;
 #[command(version, about, long_about = None)]
 struct Args {
     csv_path: String,
+    #[arg(long, default_value_t = false)]
+    csv_format: bool
 }
 
 fn parse_date_from_text(text_date: &str) -> Option<NaiveDate> {
@@ -367,6 +369,58 @@ fn display_stats(
     }
 }
 
+/// displays the aggregated stats with a semicolon separated file structure instead of human
+/// readable formatting. Useful for piping the output somewhere else, or preparing for further
+/// analysis based on this tool.
+fn display_csv_stats(
+    text_summary: Vec<(String, encapsulators::TextColumn)>,
+    number_summary: Vec<(String, encapsulators::NumberColumn)>,
+    date_summary: Vec<(String, encapsulators::DateColumn)>,
+) {
+    println!("column_name;column_type;agg_stat;value");
+
+    for (column_name, text_column) in text_summary {
+        println!(
+            "{};text;category_count;{}",
+            column_name,
+            text_column.get_category_count()
+        );
+        if text_column.get_categories().len() > 10 {
+            println!(
+                "{};text;categories;{:?}",
+                column_name,
+                text_column.get_categories()
+            );
+        } else {
+            println!("{};text;categories;(a lot)", column_name)
+        }
+    }
+
+    for (column_name, number_column) in number_summary {
+        println!("{};number;sum;{}", column_name, number_column.get_sum());
+        println!("{};number;mean;{}", column_name, number_column.get_mean());
+        println!(
+            "{};number;median;{}",
+            column_name,
+            number_column.get_median()
+        );
+        println!("{};number;std;{}", column_name, number_column.get_std());
+    }
+
+    for (column_name, date_column) in date_summary {
+        println!(
+            "{};date;earliest;{}",
+            column_name,
+            date_column.get_earliest().unwrap()
+        );
+        println!(
+            "{};date;latest;{}",
+            column_name,
+            date_column.get_latest().unwrap()
+        );
+    }
+}
+
 fn main() {
     // parses any arguments
     let args = Args::parse();
@@ -451,5 +505,9 @@ fn main() {
     }
 
     // displays all the results
-    display_stats(text_summary, number_summary, date_summary);
+    if args.csv_format == true{
+        display_csv_stats(text_summary, number_summary, date_summary);
+    } else {
+        display_stats(text_summary, number_summary, date_summary);
+    }
 }
