@@ -1,4 +1,4 @@
-//! stores encapsulation objects that organise summary values for different column types.
+//! stores encapsulation objects that organize summary values for different column types.
 
 use chrono::NaiveDate;
 use std::collections::HashSet;
@@ -27,7 +27,7 @@ impl TextColumn {
     }
 
     /// method that checks is a value is already in categories vector.
-    /// if not, it adds the passed value to categories hashset and increases category_count by 1.
+    /// if not, it adds the passed value to categories HashSet and increases category_count by 1.
     pub fn add_to_categories(&mut self, value: String) {
         if !self.categories.contains(&value) {
             self.categories.insert(value);
@@ -179,7 +179,7 @@ impl DateColumn {
         self.earliest = Some(date);
     }
 
-    /// sets latest fiels of the object to Some(passed_value) where passed_value is of type
+    /// sets latest fields of the object to Some(passed_value) where passed_value is of type
     /// chrono::NaiveDate
     pub fn set_latest(&mut self, date: NaiveDate) {
         self.latest = Some(date);

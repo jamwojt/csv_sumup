@@ -13,7 +13,7 @@ use std::thread;
 struct Args {
     csv_path: String,
     #[arg(long, default_value_t = false)]
-    csv_format: bool
+    csv_format: bool,
 }
 
 fn parse_date_from_text(text_date: &str) -> Option<NaiveDate> {
@@ -75,7 +75,7 @@ fn parse_date_from_text(text_date: &str) -> Option<NaiveDate> {
                         }
                     // if year and month are filled, day was passed during third iteration
                     } else {
-                        // put current sequance as day
+                        // put current sequence as day
                         let parsed = number_sequence.parse::<u32>();
                         match parsed {
                             Ok(day) => date_assembler.set_day(day),
@@ -114,7 +114,7 @@ fn load_file(path: &str) -> Result<(csv::Reader<File>, Vec<String>), csv::Error>
     return Ok((reader, string_headers.to_owned()));
 }
 
-/// extracts median value from hashmap with string representation of float values and the number of
+/// extracts median value from hash map with string representation of float values and the number of
 /// their occurences
 fn get_median_from_hashmap(mut hashmap: HashMap<String, u16>) -> f64 {
     // parse all keys into float values
@@ -136,20 +136,20 @@ fn get_median_from_hashmap(mut hashmap: HashMap<String, u16>) -> f64 {
     // left < right means this is before the half way, where we compare the same values or compare
     // the same stuff, or the same stuff we already compared
     while left < right {
-        // whether there are any occurences of this value left in the hashmap
+        // whether there are any occurences of this value left in the hash map
         if hashmap[&left_value.to_string()] > 0 {
-            // if yes, substract 1 from the occurences count for this value
+            // if yes, subtract 1 from the occurences count for this value
             hashmap.insert(left_value.to_string(), hashmap[&left_value.to_string()] - 1);
         } else {
-            // if no occurences of this value are left, move to a higher value as we aproach the
+            // if no occurences of this value are left, move to a higher value as we reproach the
             // center from left here, (and swap the left value to match the new left index
             left += 1;
             left_value = keys[left];
         }
 
-        // whether there are any occurences of this value left in the hashmap
+        // whether there are any occurences of this value left in the hash map
         if hashmap[&right_value.to_string()] > 0 {
-            // if yes, substract 1 from the occurences count for this value
+            // if yes, subtract 1 from the occurences count for this value
             hashmap.insert(
                 right_value.to_string(),
                 hashmap[&right_value.to_string()] - 1,
@@ -176,8 +176,8 @@ fn get_median_from_hashmap(mut hashmap: HashMap<String, u16>) -> f64 {
 }
 
 /// creates a thread for each column in the file (based on headers vector), then each thread iterates over the column values
-/// and creates aggregate statistics. Returns two hashmaps: one for handles for all threads, and
-/// one with senders that pass the column values to the threads. Both hashmaps are searchable using
+/// and creates aggregate statistics. Returns two hash maps: one for handles for all threads, and
+/// one with senders that pass the column values to the threads. Both hash maps are searchable using
 /// headers (column names)
 fn get_hashmaps(
     headers: &Vec<String>,
@@ -201,7 +201,7 @@ fn get_hashmaps(
             let mut text_column: bool = true;
             let mut date_column: bool = false;
 
-            // create empty hashmap and category count for text values
+            // create empty hash map and category count for text values
             let mut categories: HashSet<String> = HashSet::new();
             let mut category_count: u16 = 0;
 
@@ -213,7 +213,7 @@ fn get_hashmaps(
             let mut s: f64 = 0.0;
             let mut row_counter: u64 = 0;
 
-            // hashmap that will store string representation of float values with the counter to
+            // hash map that will store string representation of float values with the counter to
             // calculate the median later
             let mut mode_map: HashMap<String, u16> = HashMap::new();
 
@@ -227,7 +227,7 @@ fn get_hashmaps(
                 // match message based on the value type
                 match message {
                     encapsulators::ColumnType::Float(number_value) => {
-                        // handle int/float values: add to sum, put the value in mode hashmap,
+                        // handle int/float values: add to sum, put the value in mode hash map,
                         // handle calculating one pass standard deviation
                         text_column = false;
 
@@ -251,7 +251,7 @@ fn get_hashmaps(
                         date_column = true;
                         text_column = false;
 
-                        // swap earliest if new earlies date found
+                        // swap earliest if new earliest date found
                         let current_earliest = date_aggregate.get_earliest();
                         match current_earliest {
                             Some(date) => {
@@ -274,7 +274,7 @@ fn get_hashmaps(
                         }
                     }
                     encapsulators::ColumnType::Text(text_value) => {
-                        // handle text values: add category to counter and hashmap if they are not
+                        // handle text values: add category to counter and hash map if they are not
                         // already there
                         if !categories.contains(&text_value) {
                             categories.insert(text_value);
@@ -313,7 +313,7 @@ fn get_hashmaps(
                 return encapsulators::ColumnSummary::Number(number_column_summary);
             }
         });
-        // put thread's handle and sender in hashmaps
+        // put thread's handle and sender in hash maps
         handles_map.insert(header, handle);
         sender_map.insert(&header, tx);
     }
@@ -505,7 +505,7 @@ fn main() {
     }
 
     // displays all the results
-    if args.csv_format == true{
+    if args.csv_format == true {
         display_csv_stats(text_summary, number_summary, date_summary);
     } else {
         display_stats(text_summary, number_summary, date_summary);
